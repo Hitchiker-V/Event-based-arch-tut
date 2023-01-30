@@ -2,6 +2,7 @@ import json
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from redis_om import get_redis_connection, HashModel
+from eventing import *
 
 app = FastAPI()
 
@@ -38,6 +39,15 @@ class Event(HashModel):
     class Meta:
         database = redis
 
+# Defining a method to get the state of any delivery
+@app.get('/deliveries/{pk}/status')
+async def get_state(pk:str):
+    state = redis.get(f'delivery:{pk}')
+    if state is not None:
+        return json.loads(state)
+
+    return {}
+
 # Post method to add data to redis db for Delivery model
 @app.post('/deliveries/create')
 async def create(request: Request):
@@ -48,5 +58,12 @@ async def create(request: Request):
     delivery = Delivery(budget = body['data']['budget'],notes = body['data']['notes']).save()
 
     # Sending the event to the DB
-    event = Event(delivery_id=delivery.pk, type=body['type'], data=json.dumps(body['data']))
-    return event
+    event = Event(delivery_id=delivery.pk, type=body['type'], data=json.dumps(body['data'])).save()
+    
+    # We'll add a method to create the state of the delivery, pass it into the event and also fetch the current state from the event
+    state = create_delivery({}, event)
+
+    # Storing the state in redis cache
+    redis.set(f'delivery: {delivery.pk}', json.dumps(state))
+
+    return state
