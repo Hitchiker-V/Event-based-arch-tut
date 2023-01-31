@@ -2,7 +2,7 @@ import json
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from redis_om import get_redis_connection, HashModel
-from eventing import create_delivery, start_delivery
+from eventing import create_delivery, start_delivery, EVENTS
 import enum
 
 app = FastAPI()
@@ -92,6 +92,7 @@ async def create(request: Request):
 
     return state
 
+
 # Let's define an endpoint that consumes all events and set's status to the deliveries
 @app.post("/event")
 async def dispatch(request: Request):
@@ -103,10 +104,14 @@ async def dispatch(request: Request):
 
     # Getting the current state
     state = await get_state(delivery_id)
-    new_state = start_delivery(state, event)
+    # new_state = start_delivery(state, event)
+    # This way of assigning new state using a method but hitting the same endpoint is not the right way, as it can lead to collisions.
+    # Need to use the right method to assign/update the state based on the "type" attribute. Let's add a global constant that maps type-method in eventing.py
+    new_state = EVENTS[event.type](state, event)
+
     redis.set(
         generate_cache_key(event_type=EventType.DELIVERY, pk=delivery_id),
-        json.dumps(new_state)
+        json.dumps(new_state),
     )
 
     return new_state
